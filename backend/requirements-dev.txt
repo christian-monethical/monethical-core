@@ -1,0 +1,10 @@
+-r src/requirements.txt
+boto3==1.43.111
+moto[dynamodb,sqs,s3,secretsmanager,cognitoidp,ses]==5.2.4
+joserfc
+pytest==9.1.1
+pytest-cov
+ruff==0.17.0
+mypy==2.4.0
+cfn-lint==1.57.2
+pyjwt[crypto]

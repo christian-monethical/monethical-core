@@ -1,0 +1,652 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >-
+  Monethical Core - consent banner, forms, booking and commerce platform.
+  One stack per environment (test / prod).
+
+Parameters:
+  Stage:
+    Type: String
+    AllowedValues: [test, prod]
+    Default: test
+  ConsoleCallbackUrls:
+    Type: CommaDelimitedList
+    Description: Allowed OAuth callback URLs of the console (e.g. https://console.example.com/auth/callback)
+    Default: "http://localhost:5173/auth/callback"
+  ConsoleLogoutUrls:
+    Type: CommaDelimitedList
+    Default: "http://localhost:5173/"
+  CognitoDomainPrefix:
+    Type: String
+    Description: Globally unique prefix for the Cognito hosted UI domain
+  SesFromAddress:
+    Type: String
+    Description: Verified SES sender used for notifications (e.g. noreply@example.com)
+  SesIdentityArn:
+    Type: String
+    Description: ARN of the verified SES identity (domain or address) that owns SesFromAddress
+  OriginVerifySecret:
+    Type: String
+    NoEcho: true
+    MinLength: 24
+    Description: Shared secret CloudFront adds to API requests so the API cannot be reached directly
+  AlarmEmail:
+    Type: String
+    Description: Where operational alarms are sent
+  WebAclArn:
+    Type: String
+    Default: ""
+    Description: Optional WAFv2 web ACL (CLOUDFRONT scope, us-east-1) for the edge distribution
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [7, 14, 30, 60, 90, 180, 365]
+
+Conditions:
+  IsProd: !Equals [!Ref Stage, prod]
+  HasWebAcl: !Not [!Equals [!Ref WebAclArn, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [arm64]
+    MemorySize: 512
+    Timeout: 10
+    Tracing: Active
+    LoggingConfig:
+      LogFormat: JSON
+    Environment:
+      Variables:
+        STAGE: !Ref Stage
+        TABLE_NAME: !Ref Table
+        CONFIG_BUCKET: !Ref ConfigBucket
+        EMAIL_QUEUE_URL: !Ref EmailQueue
+        SES_FROM: !Ref SesFromAddress
+        SES_REGION: !Ref AWS::Region
+        PEPPER_SECRET_ARN: !Ref PepperSecret
+        STRIPE_SECRET_ARN: !Ref StripeSecret
+        USER_POOL_ID: !Ref UserPool
+        POWERTOOLS_SERVICE_NAME: monethical
+        POWERTOOLS_LOG_LEVEL: INFO
+        POWERTOOLS_METRICS_NAMESPACE: Monethical
+
+Resources:
+  # ------------------------------------------------------------------ data
+  Table:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: GSI1PK, AttributeType: S }
+        - { AttributeName: GSI1SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1
+          KeySchema:
+            - { AttributeName: GSI1PK, KeyType: HASH }
+            - { AttributeName: GSI1SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  ConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration: &BlockPublic
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption: &Sse
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration: { NoncurrentDays: 14 }
+
+  ConsoleBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration: *BlockPublic
+      BucketEncryption: *Sse
+
+  PepperSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Pepper for visitor IP hashing
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: pepper
+        PasswordLength: 48
+        ExcludePunctuation: true
+
+  StripeSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Stripe keys. Set secret_key and webhook_secret after deploy (never in the template).
+      SecretString: '{"secret_key":"","webhook_secret":""}'
+
+  # ------------------------------------------------------------------ auth
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: !Sub monethical-${Stage}
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true # accounts are created by Monethical staff only
+        InviteMessageTemplate:
+          EmailSubject: Your Monethical account
+          EmailMessage: "Your Monethical console account is ready. Username: {username}. Temporary password: {####}"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          TemporaryPasswordValidityDays: 7
+      MfaConfiguration: OPTIONAL
+      EnabledMfas: [SOFTWARE_TOKEN_MFA]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - { Name: verified_email, Priority: 1 }
+      UserPoolAddOns:
+        AdvancedSecurityMode: "OFF"
+      DeletionProtection: !If [IsProd, ACTIVE, INACTIVE]
+
+  StaffGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      UserPoolId: !Ref UserPool
+      GroupName: staff
+      Description: Monethical staff (can create and manage customer accounts)
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref CognitoDomainPrefix
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: console
+      GenerateSecret: false # public SPA client: Authorization Code + PKCE
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      CallbackURLs: !Ref ConsoleCallbackUrls
+      LogoutURLs: !Ref ConsoleLogoutUrls
+      SupportedIdentityProviders: [COGNITO]
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits: { AccessToken: minutes, IdToken: minutes, RefreshToken: days }
+      ExplicitAuthFlows: [ALLOW_REFRESH_TOKEN_AUTH]
+
+  # ------------------------------------------------------------------ API
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      DisableExecuteApiEndpoint: false
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience: [!Ref UserPoolClient]
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 200
+        ThrottlingRateLimit: 100
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogs.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","method":"$context.httpMethod","path":"$context.path","status":"$context.status","latency":"$context.responseLatency","integrationError":"$context.integrationErrorMessage"}'
+
+  ApiAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: !Ref LogRetentionDays
+
+  ConsoleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: monethical.handlers.console.handler
+      CodeUri: ../backend/src/
+      Description: Authenticated console API
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/{proxy+}
+            Method: ANY
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: [s3:PutObject, s3:DeleteObject, s3:ListBucket]
+              Resource: [!GetAtt ConfigBucket.Arn, !Sub "${ConfigBucket.Arn}/config/*"]
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: [!Ref PepperSecret, !Ref StripeSecret]
+            - Effect: Allow
+              Action: cognito-idp:AdminCreateUser
+              Resource: !GetAtt UserPool.Arn
+    Metadata:
+      BuildMethod: python3.13
+
+  ConsoleLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ConsoleFunction}
+      RetentionInDays: !Ref LogRetentionDays
+
+  PublicFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: monethical.handlers.public.handler
+      CodeUri: ../backend/src/
+      Description: Visitor-facing API, legacy adapters and Stripe webhook
+      Environment:
+        Variables:
+          ORIGIN_VERIFY: !Ref OriginVerifySecret
+      Events:
+        Public:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: "/public/{proxy+}", Method: ANY, Auth: { Authorizer: NONE } }
+        LegacyBanner:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: "/banners/{proxy+}", Method: ANY, Auth: { Authorizer: NONE } }
+        LegacyConsents:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /consents, Method: ANY, Auth: { Authorizer: NONE } }
+        LegacyContact:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /contact, Method: ANY, Auth: { Authorizer: NONE } }
+        Stripe:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /webhooks/stripe, Method: POST, Auth: { Authorizer: NONE } }
+        Health:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /health, Method: GET, Auth: { Authorizer: NONE } }
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref Table }
+        - SQSSendMessagePolicy: { QueueName: !GetAtt EmailQueue.QueueName }
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: [!Ref PepperSecret, !Ref StripeSecret]
+    Metadata:
+      BuildMethod: python3.13
+
+  PublicLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${PublicFunction}
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ------------------------------------------------------------------ email outbox
+  EmailQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 345600
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EmailDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  EmailDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: monethical.handlers.worker.handler
+      CodeUri: ../backend/src/
+      Description: Sends notification and confirmation e-mails through SES
+      Timeout: 30
+      Events:
+        Emails:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt EmailQueue.Arn
+            BatchSize: 5
+            FunctionResponseTypes: [ReportBatchItemFailures]
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref Table }
+        - Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: !Ref SesIdentityArn
+              Condition:
+                StringEquals: { ses:FromAddress: !Ref SesFromAddress }
+    Metadata:
+      BuildMethod: python3.13
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${WorkerFunction}
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ------------------------------------------------------------------ CDN: console
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub monethical-${Stage}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  SpaRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub monethical-${Stage}-spa-rewrite
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Serve index.html for client-side routes (API paths are untouched)
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var req = event.request;
+          var uri = req.uri;
+          if (uri.indexOf('/api/') === 0) {
+            req.uri = uri.substring(4);
+            return req;
+          }
+          if (uri.lastIndexOf('.') <= uri.lastIndexOf('/')) { req.uri = '/index.html'; }
+          return req;
+        }
+
+  SecurityHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub monethical-${Stage}-console-headers
+        SecurityHeadersConfig:
+          StrictTransportSecurity: { AccessControlMaxAgeSec: 63072000, IncludeSubdomains: true, Preload: true, Override: true }
+          ContentTypeOptions: { Override: true }
+          FrameOptions: { FrameOption: DENY, Override: true }
+          ReferrerPolicy: { ReferrerPolicy: strict-origin-when-cross-origin, Override: true }
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: >-
+              default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;
+              connect-src 'self' https://*.amazoncognito.com https://cognito-idp.*.amazonaws.com;
+              frame-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+
+  ConsoleDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        Origins:
+          - Id: console
+            DomainName: !GetAtt ConsoleBucket.RegionalDomainName
+            S3OriginConfig: { OriginAccessIdentity: "" }
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+          - Id: api
+            DomainName: !Sub ${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+            CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
+            OriginCustomHeaders:
+              - { HeaderName: x-origin-verify, HeaderValue: !Ref OriginVerifySecret }
+        DefaultCacheBehavior:
+          TargetOriginId: console
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+          ResponseHeadersPolicyId: !Ref SecurityHeadersPolicy
+          FunctionAssociations:
+            - { EventType: viewer-request, FunctionARN: !GetAtt SpaRewriteFunction.FunctionMetadata.FunctionARN }
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: api
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader
+            FunctionAssociations:
+              - { EventType: viewer-request, FunctionARN: !GetAtt SpaRewriteFunction.FunctionMetadata.FunctionARN }
+
+  # ------------------------------------------------------------------ CDN: widgets + public API
+  WidgetCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub monethical-${Stage}-config-60s
+        MinTTL: 0
+        DefaultTTL: 60
+        MaxTTL: 600
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          HeadersConfig: { HeaderBehavior: none }
+          CookiesConfig: { CookieBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  ApiOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub monethical-${Stage}-public-api
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers: [origin, user-agent, content-type, stripe-signature, cloudfront-viewer-address]
+        CookiesConfig: { CookieBehavior: none }
+        QueryStringsConfig: { QueryStringBehavior: all }
+
+  CorsForAssetsPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub monethical-${Stage}-assets-cors
+        CorsConfig:
+          AccessControlAllowOrigins: { Items: ["*"] }
+          AccessControlAllowHeaders: { Items: ["*"] }
+          AccessControlAllowMethods: { Items: [GET, HEAD, OPTIONS] }
+          AccessControlMaxAgeSec: 86400
+          AccessControlAllowCredentials: false
+          OriginOverride: true
+        SecurityHeadersConfig:
+          ContentTypeOptions: { Override: true }
+        CustomHeadersConfig:
+          Items:
+            - { Header: Cross-Origin-Resource-Policy, Value: cross-origin, Override: true }
+
+  EdgeDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        WebACLId: !If [HasWebAcl, !Ref WebAclArn, !Ref AWS::NoValue]
+        Origins:
+          - Id: assets
+            DomainName: !GetAtt ConfigBucket.RegionalDomainName
+            S3OriginConfig: { OriginAccessIdentity: "" }
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+          - Id: api
+            DomainName: !Sub ${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+            CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
+            OriginCustomHeaders:
+              - { HeaderName: x-origin-verify, HeaderValue: !Ref OriginVerifySecret }
+        DefaultCacheBehavior:
+          TargetOriginId: assets
+          ViewerProtocolPolicy: https-only
+          Compress: true
+          CachePolicyId: !Ref WidgetCachePolicy
+          ResponseHeadersPolicyId: !Ref CorsForAssetsPolicy
+        CacheBehaviors:
+          # Versioned widget bundles: file names carry a content hash, so cache forever.
+          - PathPattern: /w/*
+            TargetOriginId: assets
+            ViewerProtocolPolicy: https-only
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized
+            ResponseHeadersPolicyId: !Ref CorsForAssetsPolicy
+          - PathPattern: /config/*
+            TargetOriginId: assets
+            ViewerProtocolPolicy: https-only
+            Compress: true
+            CachePolicyId: !Ref WidgetCachePolicy
+            ResponseHeadersPolicyId: !Ref CorsForAssetsPolicy
+          - { PathPattern: /public/*, TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: !Ref ApiOriginRequestPolicy }
+          - { PathPattern: /banners/*, TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: !Ref ApiOriginRequestPolicy }
+          - { PathPattern: /consents, TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: !Ref ApiOriginRequestPolicy }
+          - { PathPattern: /contact, TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: !Ref ApiOriginRequestPolicy }
+          - { PathPattern: /webhooks/*, TargetOriginId: api, ViewerProtocolPolicy: https-only, AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE], CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad, OriginRequestPolicyId: !Ref ApiOriginRequestPolicy }
+
+  ConsoleBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ConsoleBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub "${ConsoleBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${ConsoleDistribution}
+
+  ConfigBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ConfigBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: [!Sub "${ConfigBucket.Arn}/config/*", !Sub "${ConfigBucket.Arn}/w/*"]
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${EdgeDistribution}
+
+  # ------------------------------------------------------------------ alarms
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref AlarmEmail }
+
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: E-mails could not be delivered after retries
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions: [{ Name: QueueName, Value: !GetAtt EmailDeadLetterQueue.QueueName }]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  ApiServerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: API returned 5xx responses
+      Namespace: AWS/ApiGateway
+      MetricName: 5xx
+      Dimensions: [{ Name: ApiId, Value: !Ref HttpApi }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  PublicErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Public Lambda is failing
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref PublicFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+  ConsoleErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Console Lambda is failing
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref ConsoleFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+  ConsoleUrl:
+    Value: !Sub https://${ConsoleDistribution.DomainName}
+  EdgeUrl:
+    Description: Base URL for widgets (/w), config snapshots (/config) and the public API
+    Value: !Sub https://${EdgeDistribution.DomainName}
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  CognitoHostedUiDomain:
+    Value: !Sub https://${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com
+  ConsoleBucketName:
+    Value: !Ref ConsoleBucket
+  ConfigBucketName:
+    Description: Holds config snapshots (config/) and widget bundles (w/)
+    Value: !Ref ConfigBucket
+  ConsoleDistributionId:
+    Value: !Ref ConsoleDistribution
+  EdgeDistributionId:
+    Value: !Ref EdgeDistribution
+  TableName:
+    Value: !Ref Table
+  StripeSecretArn:
+    Value: !Ref StripeSecret

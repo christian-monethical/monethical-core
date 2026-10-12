@@ -1,0 +1,44 @@
+[project]
+name = "monethical-core"
+version = "2.0.0"
+description = "Monethical Core - multi-tenant consent, forms, booking and commerce backend (AWS Lambda + DynamoDB)"
+requires-python = ">=3.13"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "S", "C4", "SIM", "RUF", "PT"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "S311", "PT018", "RUF059"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --cov=monethical --cov-report=term-missing:skip-covered --cov-fail-under=85"
+filterwarnings = ["ignore::DeprecationWarning:botocore.*", "ignore::DeprecationWarning:moto.*"]
+
+[tool.coverage.run]
+branch = true
+source = ["monethical"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Powertools' event-handler decorators are untyped upstream.
+module = ["monethical.api.*", "monethical.handlers.*"]
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+warn_unused_ignores = false
