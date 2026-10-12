@@ -254,7 +254,7 @@ def delete_survey(site_id: str, survey_id: str) -> Response[None]:
 
 
 @router.get("/sites/<site_id>/surveys/<survey_id>/results")
-def survey_results(site_id: str, survey_id: str) -> dict[str, Any]:
+def survey_results(site_id: str, survey_id: str) -> surveys.SurveyResults:
     return surveys.results(ctx.site_context(router, site_id).site_id, survey_id)
 
 
@@ -293,7 +293,7 @@ def delete_item(site_id: str, item_id: str) -> Response[None]:
 
 
 @router.get("/sites/<site_id>/items/<item_id>/prices")
-def list_prices(site_id: str, item_id: str) -> list[dict[str, Any]]:
+def list_prices(site_id: str, item_id: str) -> list[catalog.PriceOverrideOut]:
     c = ctx.site_context(router, site_id)
     catalog.get_item(c.site_id, item_id)
     return catalog.list_price_overrides(c.site_id, item_id)
@@ -315,6 +315,19 @@ def delete_price(
     c = ctx.site_context(router, site_id)
     catalog.clear_price_override(c.site_id, item_id, day, slot)
     return Response(status_code=204, body=None)
+
+
+@router.get("/sites/<site_id>/items/<item_id>/calendar")
+def item_calendar(
+    site_id: str,
+    item_id: str,
+    start: Annotated[str, Query(alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$")],
+    end: Annotated[str, Query(alias="to", pattern=r"^\d{4}-\d{2}-\d{2}$")],
+) -> list[catalog.DayAvailability]:
+    """Per-day occupancy, blocks and prices for the console calendar (no guest filter)."""
+    c = ctx.site_context(router, site_id)
+    item = catalog.get_item(c.site_id, item_id)
+    return catalog.availability(c.site_id, item, catalog.parse_date(start), catalog.parse_date(end))
 
 
 @router.post("/sites/<site_id>/items/<item_id>/block")

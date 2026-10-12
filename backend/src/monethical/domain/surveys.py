@@ -209,25 +209,39 @@ def record_response(
     return rid
 
 
-def results(site_id: str, survey_id: str) -> dict[str, Any]:
+class QuestionResult(BaseModel):
+    count: int
+    average: float | None = None
+    distribution: dict[str, int] | None = None
+    samples: list[str] | None = None
+
+
+class SurveyResults(BaseModel):
+    survey_id: str
+    responses: int
+    questions: dict[str, QuestionResult]
+
+
+def results(site_id: str, survey_id: str) -> SurveyResults:
     """Aggregate up to the latest 2000 responses (bounded) per question."""
     survey = get_survey(site_id, survey_id)
     items = db.query_all(_partition(site_id, survey_id), sk_prefix=keys.SK_RESPONSE, cap=2000)
-    summary: dict[str, Any] = {}
+    summary: dict[str, QuestionResult] = {}
     for q in survey.questions:
         values = [i["answers"][q.key] for i in items if q.key in i["answers"]]
         if q.type == "rating":
             nums = [v for v in values if isinstance(v, int)]
-            summary[q.key] = {
-                "average": round(sum(nums) / len(nums), 2) if nums else None,
-                "distribution": dict(sorted(Counter(nums).items())),
-                "count": len(nums),
-            }
+            summary[q.key] = QuestionResult(
+                average=round(sum(nums) / len(nums), 2) if nums else None,
+                distribution={str(k): v for k, v in sorted(Counter(nums).items())},
+                count=len(nums),
+            )
         elif q.type in {"choice", "boolean"}:
-            summary[q.key] = {
-                "distribution": dict(Counter(str(v) for v in values)),
-                "count": len(values),
-            }
+            summary[q.key] = QuestionResult(
+                distribution=dict(Counter(str(v) for v in values)), count=len(values)
+            )
         else:
-            summary[q.key] = {"samples": [str(v) for v in values[:20]], "count": len(values)}
-    return {"survey_id": survey_id, "responses": len(items), "questions": summary}
+            summary[q.key] = QuestionResult(
+                samples=[str(v) for v in values[:20]], count=len(values)
+            )
+    return SurveyResults(survey_id=survey_id, responses=len(items), questions=summary)

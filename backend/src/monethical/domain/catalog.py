@@ -85,7 +85,7 @@ def _item_record(site_id: str, stored: ItemStored) -> db.Item:
 def _check_config(config: ItemConfig) -> None:
     for value in (config.available_from, config.available_to):
         if value:
-            _parse(value)
+            parse_date(value)
     if (
         config.available_from
         and config.available_to
@@ -96,7 +96,7 @@ def _check_config(config: ItemConfig) -> None:
         raise BadRequest("Only experiences have time slots", code="invalid_slots")
 
 
-def _parse(value: str) -> date:
+def parse_date(value: str) -> date:
     try:
         return date.fromisoformat(value)
     except ValueError as exc:
@@ -212,7 +212,7 @@ def _day_key(day: str, slot: str | None) -> str:
 
 def set_price_override(site_id: str, item_id: str, payload: PriceOverride) -> None:
     get_item(site_id, item_id)
-    _parse(payload.date)
+    parse_date(payload.date)
     db.put(
         {
             "PK": keys.site(site_id),
@@ -227,10 +227,15 @@ def clear_price_override(site_id: str, item_id: str, day: str, slot: str | None)
     db.delete(keys.site(site_id), f"{keys.SK_PRICE}{item_id}#{_day_key(day, slot)}")
 
 
-def list_price_overrides(site_id: str, item_id: str) -> list[dict[str, Any]]:
+class PriceOverrideOut(BaseModel):
+    day: str
+    price_cents: int
+
+
+def list_price_overrides(site_id: str, item_id: str) -> list[PriceOverrideOut]:
     prefix = f"{keys.SK_PRICE}{item_id}#"
     return [
-        {"day": raw["SK"].removeprefix(prefix), "price_cents": raw["price_cents"]}
+        PriceOverrideOut(day=raw["SK"].removeprefix(prefix), price_cents=raw["price_cents"])
         for raw in db.query_all(keys.site(site_id), sk_prefix=prefix, cap=1000)
     ]
 
@@ -243,6 +248,7 @@ class DayAvailability(BaseModel):
     available: bool
     remaining: int | None
     price_cents: int
+    blocked: bool = False
 
 
 def _days(start: date, end: date) -> list[date]:
@@ -315,6 +321,7 @@ def availability(
                 available=ok,
                 remaining=remaining,
                 price_cents=prices.get(_day_key(key, slot), prices.get(key, item.price_cents)),
+                blocked=blocked,
             )
         )
     return out
@@ -461,13 +468,13 @@ def create_booking(
         raise NotFound("Item not found", code="item_not_found")
     if not EMAIL_RE.match(payload.email):
         raise BadRequest("Invalid email", code="invalid_email")
-    start = _parse(payload.start)
+    start = parse_date(payload.start)
     if start < date.today():
         raise BadRequest("Date is in the past", code="date_in_past")
     if item.type == "ROOM":
         if not payload.end:
             raise BadRequest("end is required for rooms", code="invalid_range")
-        end = _parse(payload.end)
+        end = parse_date(payload.end)
     else:
         end = start + timedelta(days=1)
     if item.type == "EXPERIENCE" and item.slots and payload.slot not in item.slots:
@@ -569,7 +576,7 @@ class BlockIn(BaseModel):
 
 
 def block_days(site_id: str, item: ItemStored, payload: BlockIn) -> int:
-    start, end = _parse(payload.start), _parse(payload.end)
+    start, end = parse_date(payload.start), parse_date(payload.end)
     if end <= start or (end - start).days > 90:
         raise BadRequest("Range must be 1-90 days", code="invalid_range")
     ops: list[db.Op] = []

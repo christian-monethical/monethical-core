@@ -1,6 +1,47 @@
 {
   "components": {
     "schemas": {
+      "ApiErrorBody": {
+        "properties": {
+          "error": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "details": {
+                "items": {
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field",
+                    "message"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
       "BookIn": {
         "additionalProperties": false,
         "properties": {
@@ -286,6 +327,11 @@
             "title": "Available",
             "type": "boolean"
           },
+          "blocked": {
+            "default": false,
+            "title": "Blocked",
+            "type": "boolean"
+          },
           "day": {
             "title": "Day",
             "type": "string"
@@ -313,19 +359,6 @@
           "price_cents"
         ],
         "title": "DayAvailability",
-        "type": "object"
-      },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
         "type": "object"
       },
       "LegacyConsentIn": {
@@ -501,35 +534,6 @@
         ],
         "title": "SurveyIn",
         "type": "object"
-      },
-      "ValidationError": {
-        "properties": {
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "title": "Location",
-            "type": "array"
-          },
-          "type": {
-            "title": "Error Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError",
-        "type": "object"
       }
     }
   },
@@ -565,15 +569,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "GET /banners/by-site"
@@ -603,15 +607,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "POST /consents"
@@ -641,15 +645,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "POST /contact"
@@ -673,15 +677,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "GET /health"
@@ -722,15 +726,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "POST /public/{site_key}/consent"
@@ -780,15 +784,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "POST /public/{site_key}/forms/{form_id}/submit"
@@ -881,15 +885,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "GET /public/{site_key}/items/{slug}/availability"
@@ -939,15 +943,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "POST /public/{site_key}/items/{slug}/book"
@@ -988,15 +992,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "POST /public/{site_key}/newsletter/subscribe"
@@ -1047,15 +1051,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "GET /public/{site_key}/newsletter/unsubscribe"
@@ -1088,15 +1092,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "GET /public/{site_key}/site"
@@ -1146,15 +1150,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "POST /public/{site_key}/surveys/{survey_id}/respond"
@@ -1174,15 +1178,15 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ApiErrorBody"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "Invalid request or validation error"
           }
         },
         "summary": "POST /webhooks/stripe"

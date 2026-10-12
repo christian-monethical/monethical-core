@@ -6,6 +6,8 @@ import time
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
+from pydantic import BaseModel
+
 from monethical.core import db, keys
 
 Metric = Literal[
@@ -39,7 +41,34 @@ def incr(site_id: str, metric: Metric, amount: int = 1) -> None:
     )
 
 
-def summary(site_id: str, days: int = 30) -> dict[str, Any]:
+class AnalyticsPoint(BaseModel):
+    day: str
+    consent_total: int = 0
+    consent_analytics: int = 0
+    consent_marketing: int = 0
+    form_submissions: int = 0
+    newsletter_signups: int = 0
+    survey_responses: int = 0
+    bookings: int = 0
+
+
+class AnalyticsTotals(BaseModel):
+    consent_total: int = 0
+    consent_analytics: int = 0
+    consent_marketing: int = 0
+    form_submissions: int = 0
+    newsletter_signups: int = 0
+    survey_responses: int = 0
+    bookings: int = 0
+
+
+class AnalyticsOut(BaseModel):
+    days: int
+    totals: AnalyticsTotals
+    series: list[AnalyticsPoint]
+
+
+def summary(site_id: str, days: int = 30) -> AnalyticsOut:
     days = max(1, min(days, 365))
     end = datetime.now(UTC).date()
     start = end - timedelta(days=days - 1)
@@ -71,4 +100,8 @@ def summary(site_id: str, days: int = 30) -> dict[str, Any]:
             point[m] = value
             totals[m] += value
         series.append(point)
-    return {"days": days, "totals": totals, "series": series}
+    return AnalyticsOut(
+        days=days,
+        totals=AnalyticsTotals(**totals),
+        series=[AnalyticsPoint(**point) for point in series],
+    )

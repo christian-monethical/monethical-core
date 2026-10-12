@@ -207,8 +207,8 @@ def item_availability(
     return catalog.availability(
         _site()["site_id"],
         item,
-        catalog._parse(start),
-        catalog._parse(end),
+        catalog.parse_date(start),
+        catalog.parse_date(end),
         guests=guests,
         slot=slot,
     )

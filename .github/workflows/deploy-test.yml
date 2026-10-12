@@ -54,7 +54,7 @@ jobs:
           echo "console_dist=$(out ConsoleDistributionId)" >> "$GITHUB_OUTPUT"
           echo "edge_dist=$(out EdgeDistributionId)" >> "$GITHUB_OUTPUT"
           echo "edge_url=$(out EdgeUrl)" >> "$GITHUB_OUTPUT"
-          echo "domain=$(out CognitoHostedUiDomain)" >> "$GITHUB_OUTPUT"
+          echo "domain=$(out CognitoHostedUiDomain | sed 's#^https://##')" >> "$GITHUB_OUTPUT"
           echo "client=$(out UserPoolClientId)" >> "$GITHUB_OUTPUT"
       - name: Publish widgets
         if: hashFiles('widgets/package.json') != ''

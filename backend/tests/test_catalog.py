@@ -269,3 +269,28 @@ def test_return_url_must_belong_to_site(
 def test_catalog_lists_empty(console_a: Api, site_a: dict[str, Any], path: str) -> None:
     status, data, _ = console_a.get(f"/v1/sites/{site_a['site_id']}/{path}")
     assert status == 200 and (data == [] or data["items"] == [])
+
+
+def test_console_calendar_shows_blocks_bookings_and_limits(
+    console_a: Api, public: Api, site_a: dict[str, Any]
+) -> None:
+    item = new_item(console_a, site_a)
+    sid = site_a["site_id"]
+    console_a.post(f"/v1/sites/{sid}/items/{item['item_id']}/block", {"start": d(10), "end": d(11)})
+    book(public, site_a, "camera-blu", start=d(11), end=d(12))
+    status, days, _ = console_a.get(
+        f"/v1/sites/{sid}/items/{item['item_id']}/calendar", query={"from": d(10), "to": d(13)}
+    )
+    assert status == 200
+    assert [(x["available"], x["blocked"]) for x in days] == [
+        (False, True),
+        (False, False),
+        (True, False),
+    ]
+    me = console_a.get("/v1/me")[1]
+    assert me["limits"] == {
+        "max_sites": 1,
+        "max_forms_per_site": 1,
+        "max_items_per_site": 5,
+        "max_surveys_per_site": 2,
+    }

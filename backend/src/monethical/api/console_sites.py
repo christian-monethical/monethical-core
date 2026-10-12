@@ -25,6 +25,7 @@ class MeOut(BaseModel):
     plan: str
     plan_name: str
     max_sites: int
+    limits: LimitsOut
     stripe_connected: bool
     stripe_charges_enabled: bool
 
@@ -43,6 +44,18 @@ class UrlOut(BaseModel):
     url: str
 
 
+class StripeStatusOut(BaseModel):
+    connected: bool
+    charges_enabled: bool
+
+
+class LimitsOut(BaseModel):
+    max_sites: int
+    max_forms_per_site: int
+    max_items_per_site: int
+    max_surveys_per_site: int
+
+
 @router.get("/me")
 def get_me() -> MeOut:
     p = ctx.principal(router)
@@ -56,6 +69,12 @@ def get_me() -> MeOut:
         plan=plan,
         plan_name=lim.display_name,
         max_sites=lim.max_sites,
+        limits=LimitsOut(
+            max_sites=lim.max_sites,
+            max_forms_per_site=lim.max_forms_per_site,
+            max_items_per_site=lim.max_items_per_site,
+            max_surveys_per_site=lim.max_surveys_per_site,
+        ),
         stripe_connected=bool(profile.get("stripe_account_id")),
         stripe_charges_enabled=bool(profile.get("stripe_charges_enabled")),
     )
@@ -133,7 +152,7 @@ def revoke_key(site_id: str, key_id: str) -> Response[None]:
 @router.get("/sites/<site_id>/analytics")
 def get_analytics(
     site_id: str, days: Annotated[int, Query(ge=1, le=365)] = 30
-) -> dict[str, object]:
+) -> analytics.AnalyticsOut:
     c = ctx.site_context(router, site_id)
     return analytics.summary(c.site_id, days)
 
@@ -165,14 +184,13 @@ def stripe_connect(payload: Annotated[ReturnUrls, Body()]) -> UrlOut:
 
 
 @router.get("/stripe/status")
-def stripe_status() -> dict[str, bool]:
+def stripe_status() -> StripeStatusOut:
     p = ctx.principal(router)
     ctx.account_plan(p)
     status = payments.refresh_status(p.tenant_id)
-    return {
-        "connected": bool(status["connected"]),
-        "charges_enabled": bool(status["charges_enabled"]),
-    }
+    return StripeStatusOut(
+        connected=bool(status["connected"]), charges_enabled=bool(status["charges_enabled"])
+    )
 
 
 # ----------------------------------------------------------------------------- staff admin
