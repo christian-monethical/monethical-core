@@ -26,9 +26,7 @@ def test_form_crud(console_a: Api, site_a: dict[str, Any]) -> None:
     assert console_a.post(base, {"name": "C", "recipients": ["i@rossi.example.com"]})[0] == 403
 
 
-def test_submissions_status_and_delete(
-    console_a: Api, public: Api, site_a: dict[str, Any]
-) -> None:
+def test_submissions_status_and_delete(console_a: Api, public: Api, site_a: dict[str, Any]) -> None:
     sid = site_a["site_id"]
     form = console_a.post(
         f"/v1/sites/{sid}/forms", {"name": "A", "recipients": ["info@rossi.example.com"]}
@@ -37,7 +35,13 @@ def test_submissions_status_and_delete(
     for i in range(3):
         public.post(
             url,
-            {"data": {"name": f"Mario {i}", "email": "m@example.com", "message": "Messaggio lungo"}},
+            {
+                "data": {
+                    "name": f"Mario {i}",
+                    "email": "m@example.com",
+                    "message": "Messaggio lungo",
+                }
+            },
             headers=ORIGIN,
             ip=f"198.51.100.{i + 1}",
         )
@@ -82,7 +86,7 @@ def test_consent_csv_export_neutralizes_formulas(
     public.post(
         f"/public/{site_a['site_key']}/consent",
         {"banner_version": 1, "analytics": True},
-        headers={**ORIGIN, "user-agent": "=HYPERLINK(\"http://evil\")"},
+        headers={**ORIGIN, "user-agent": '=HYPERLINK("http://evil")'},
     )
     status, body, headers = console_a.get(f"/v1/sites/{sid}/consents.csv")
     assert status == 200 and headers["Content-Type"].startswith("text/csv")
@@ -112,18 +116,18 @@ def test_survey_crud_and_validation(console_a: Api, site_a: dict[str, Any]) -> N
 
 def test_snapshot_removed_when_site_paused(console_a: Api, site_a: dict[str, Any]) -> None:
     import boto3
+    import pytest
     from botocore.exceptions import ClientError
+
     from conftest import BUCKET
 
     key = f"config/{site_a['site_key']}/site.json"
     s3 = boto3.client("s3")
     assert s3.head_object(Bucket=BUCKET, Key=key)
     console_a.patch(f"/v1/sites/{site_a['site_id']}", {"status": "paused"})
-    try:
+    with pytest.raises(ClientError) as exc:
         s3.head_object(Bucket=BUCKET, Key=key)
-        raise AssertionError("snapshot must be removed for paused sites")
-    except ClientError as exc:
-        assert exc.response["Error"]["Code"] in {"404", "NoSuchKey"}
+    assert exc.value.response["Error"]["Code"] in {"404", "NoSuchKey"}
     console_a.patch(f"/v1/sites/{site_a['site_id']}", {"status": "active"})
     assert s3.head_object(Bucket=BUCKET, Key=key)
 
@@ -131,11 +135,14 @@ def test_snapshot_removed_when_site_paused(console_a: Api, site_a: dict[str, Any
 def test_analytics_summary_shape(console_a: Api, site_a: dict[str, Any]) -> None:
     data = console_a.get(f"/v1/sites/{site_a['site_id']}/analytics", query={"days": "7"})[1]
     assert data["days"] == 7 and len(data["series"]) == 7
-    assert console_a.get(f"/v1/sites/{site_a['site_id']}/analytics", query={"days": "999"})[0] == 400
+    assert (
+        console_a.get(f"/v1/sites/{site_a['site_id']}/analytics", query={"days": "999"})[0] == 400
+    )
 
 
 def test_origin_helpers() -> None:
     import pytest
+
     from monethical.core.errors import BadRequest
     from monethical.core.origin import host_allowed, host_of, normalize_domain
 
