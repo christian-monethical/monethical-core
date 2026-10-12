@@ -1,0 +1,22 @@
+/** Cache keys. Prefix-based invalidation: `site:<id>:` covers everything of one site. */
+export const K = {
+  me: 'me',
+  sites: 'sites',
+  site: (id: string) => `site:${id}`,
+  banner: (id: string) => `site:${id}:banner`,
+  forms: (id: string) => `site:${id}:forms`,
+  submissions: (id: string) => `site:${id}:submissions`,
+  newsletter: (id: string) => `site:${id}:newsletter`,
+  subscribers: (id: string) => `site:${id}:subscribers`,
+  surveys: (id: string) => `site:${id}:surveys`,
+  surveyResults: (id: string, surveyId: string) => `site:${id}:survey:${surveyId}:results`,
+  items: (id: string) => `site:${id}:items`,
+  prices: (id: string, itemId: string) => `site:${id}:item:${itemId}:prices`,
+  calendar: (id: string, itemId: string, month: string) => `site:${id}:item:${itemId}:calendar:${month}`,
+  bookings: (id: string) => `site:${id}:bookings`,
+  consents: (id: string) => `site:${id}:consents`,
+  keys: (id: string) => `site:${id}:keys`,
+  analytics: (id: string, days: number) => `site:${id}:analytics:${days}`,
+  stripe: 'stripe:status',
+  accounts: 'admin:accounts',
+} as const;

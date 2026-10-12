@@ -464,19 +464,6 @@
         "title": "OkOut",
         "type": "object"
       },
-      "ResponseValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "ResponseValidationError",
-        "type": "object"
-      },
       "SubmitIn": {
         "additionalProperties": false,
         "properties": {

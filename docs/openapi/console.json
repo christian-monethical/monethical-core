@@ -2024,19 +2024,6 @@
         "title": "QuestionResult",
         "type": "object"
       },
-      "ResponseValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "ResponseValidationError",
-        "type": "object"
-      },
       "ReturnUrls": {
         "properties": {
           "refresh_url": {

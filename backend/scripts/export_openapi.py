@@ -47,6 +47,7 @@ def use_real_error_shape(schema: dict) -> None:  # type: ignore[type-arg]
     schemas["ApiErrorBody"] = ERROR_SCHEMA
     schemas.pop("HTTPValidationError", None)
     schemas.pop("ValidationError", None)
+    schemas.pop("ResponseValidationError", None)
     ref = {"$ref": "#/components/schemas/ApiErrorBody"}
     for operations in schema.get("paths", {}).values():
         for op in operations.values():

@@ -1,0 +1,84 @@
+.sparkline {
+  width: 100%;
+  height: 28px;
+  margin-top: auto;
+}
+.sp-line,
+.ac-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.ac-area {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.areachart {
+  margin: 0;
+}
+.areachart svg {
+  width: 100%;
+  height: 200px;
+  display: block;
+  border-radius: 8px;
+}
+.area-readout {
+  font-weight: 600;
+  min-height: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.ac-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.ac-cursor {
+  stroke: var(--muted);
+  stroke-dasharray: 4 3;
+  stroke-width: 1;
+}
+.area-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.hbars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hbars li {
+  display: grid;
+  grid-template-columns: minmax(70px, 22%) 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+.hb-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+.hb-track {
+  width: 100%;
+  height: 10px;
+}
+.hb-bg {
+  fill: var(--surface-3);
+}
+.hb-fill {
+  fill: var(--accent);
+}
+.hb-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  min-width: 64px;
+  text-align: right;
+}
+.hb-value small {
+  color: var(--muted);
+  font-weight: 500;
+}

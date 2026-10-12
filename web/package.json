@@ -1,0 +1,38 @@
+{
+  "name": "@monethical/web",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "vite --mode mock",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "gen:api": "node scripts/gen-api.mjs",
+    "size": "node scripts/size.mjs"
+  },
+  "dependencies": {
+    "@preact/signals": "2.11.3",
+    "openapi-fetch": "0.17.0",
+    "preact": "11.0.1",
+    "wouter-preact": "3.13.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@preact/preset-vite": "2.10.6",
+    "@testing-library/preact": "3.2.4",
+    "@types/node": "24.19.2",
+    "eslint": "9.39.5",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "globals": "17.13.0",
+    "happy-dom": "21.0.1",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.1",
+    "vite": "8.3.4",
+    "vitest": "5.0.4"
+  }
+}
