@@ -121,7 +121,7 @@ def guard(app: APIGatewayHttpResolver, next_middleware: NextMiddleware) -> Respo
         app.append_context(site=lookup, ip=ip, origin=origin, origin_allowed=allowed)
         response: Response[Any] = next_middleware(app)
     except ApiError as exc:
-        response = error_response(exc.status, exc.code, exc.message)
+        response = error_response(exc.status, exc.code, exc.message, exc.details)
     if allowed:
         for name, value in _cors(origin).items():
             response.headers[name] = value  # type: ignore[assignment]

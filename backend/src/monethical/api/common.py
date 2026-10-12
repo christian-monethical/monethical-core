@@ -44,7 +44,7 @@ def build_app(*, title: str) -> APIGatewayHttpResolver:
     def _api_error(exc: ApiError) -> Response[str]:
         if exc.status >= 500:
             logger.exception("api error")
-        return error_response(exc.status, exc.code, exc.message)
+        return error_response(exc.status, exc.code, exc.message, exc.details)
 
     @app.exception_handler(RequestValidationError)
     def _validation(exc: RequestValidationError) -> Response[str]:

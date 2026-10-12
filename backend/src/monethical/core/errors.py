@@ -7,9 +7,16 @@ class ApiError(Exception):
     status: int = 500
     code: str = "internal_error"
 
-    def __init__(self, message: str | None = None, *, code: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str | None = None,
+        *,
+        code: str | None = None,
+        details: list[dict[str, str]] | None = None,
+    ) -> None:
         super().__init__(message or self.code)
         self.message = message or self.code
+        self.details = details
         if code:
             self.code = code
 

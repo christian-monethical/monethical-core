@@ -135,7 +135,7 @@ def legacy_consent(payload: Annotated[LegacyConsentIn, Body()]) -> Response[Any]
         )
         analytics.incr(lookup["site_id"], "consent_total")
     except ApiError as exc:
-        return error_response(exc.status, exc.code, exc.message)
+        return error_response(exc.status, exc.code, exc.message, exc.details)
     body = {
         "id": cid,
         "banner_id": lookup["site_id"],
@@ -200,5 +200,5 @@ def legacy_contact(payload: Annotated[LegacyContactIn, Body()]) -> Response[Any]
     except BadRequest as exc:
         return with_cors(error_response(400, exc.code, exc.message), origin, True)
     except ApiError as exc:
-        return error_response(exc.status, exc.code, exc.message)
+        return error_response(exc.status, exc.code, exc.message, exc.details)
     return with_cors(json_response(200, {"ok": True}), origin, True)

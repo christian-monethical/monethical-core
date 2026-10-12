@@ -178,7 +178,11 @@ def validate_answers(survey: SurveyStored, raw: dict[str, Any]) -> dict[str, Any
             else:
                 clean[q.key] = text
     if errors:
-        raise BadRequest("Validation failed: " + ", ".join(errors), code="invalid_submission")
+        raise BadRequest(
+            "Validation failed: " + ", ".join(errors),
+            code="invalid_submission",
+            details=[dict(zip(("field", "message"), e.split(":", 1), strict=True)) for e in errors],
+        )
     return clean
 
 

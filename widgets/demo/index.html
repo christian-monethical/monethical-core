@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monethical widgets demo</title>
+  <style>
+    body{font:16px/1.6 system-ui,sans-serif;margin:0;color:#1d1d1f;background:#f5f5f7}
+    main{max-width:960px;margin:0 auto;padding:24px 16px 120px}
+    section{margin:0 0 40px}
+    h1{margin:0 0 4px}
+    h2{margin:0 0 12px}
+    code{background:#e8e8ed;padding:1px 5px;border-radius:4px}
+    #log{background:#111;color:#9fe;font:12px/1.5 ui-monospace,monospace;padding:12px;border-radius:8px;max-height:200px;overflow:auto;white-space:pre-wrap}
+    .row{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+    button.t{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid #c7c7cc;background:#fff;cursor:pointer}
+  </style>
+  <!-- Consent Mode defaults are set by the loader's consent module; Google tags placed after it respect them. -->
+  <script src="/w/loader.js" data-site-key="pk_live_0123456789abcdef0123456789abcdef" async></script>
+</head>
+<body>
+  <main>
+    <h1>Monethical widgets demo</h1>
+    <p>Everything here is served by <code>npm run demo</code> with mocked endpoints. Open the console to see <code>monethical:*</code> events in the log below.</p>
+
+    <section>
+      <h2>Consent API</h2>
+      <div class="row">
+        <button class="t" id="open">Monethical.consent.open()</button>
+        <button class="t" id="get">Monethical.consent.get()</button>
+        <button class="t" id="reset">Forget consent and reload</button>
+      </div>
+      <p>Gated embeds: an analytics script and a marketing iframe stay inactive until consent.</p>
+      <script type="text/plain" data-monethical-category="analytics">window.__analytics = true; document.title += ' [analytics active]';</script>
+      <iframe data-monethical-category="marketing" data-src="/frame.html" title="Gated marketing frame" style="width:100%;height:56px;border:1px solid #c7c7cc;border-radius:8px;background:#fff"></iframe>
+    </section>
+
+    <section>
+      <h2>Contact form</h2>
+      <div data-monethical-widget="contact-form" data-form-id="contact"></div>
+    </section>
+
+    <section>
+      <h2>Newsletter</h2>
+      <div data-monethical-widget="newsletter"></div>
+    </section>
+
+    <section>
+      <h2>Survey</h2>
+      <div data-monethical-widget="survey" data-id="nps"></div>
+    </section>
+
+    <section>
+      <h2>Catalog and booking</h2>
+      <div data-monethical-widget="items"></div>
+    </section>
+
+    <section>
+      <h2>Late container (added after 1.5 s)</h2>
+      <div id="late"></div>
+    </section>
+
+    <h2>Events</h2>
+    <div id="log"></div>
+  </main>
+  <script>
+    (function () {
+      var log = document.getElementById('log');
+      function add(name, detail) { log.textContent += name + ' ' + JSON.stringify(detail) + '\n'; log.scrollTop = log.scrollHeight; }
+      ['monethical:consent', 'monethical:submit', 'monethical:booking', 'monethical:error'].forEach(function (n) {
+        window.addEventListener(n, function (e) { add(n, e.detail); });
+      });
+      document.getElementById('open').onclick = function () { window.Monethical && window.Monethical.consent.open(); };
+      document.getElementById('get').onclick = function () { add('consent.get()', window.Monethical && window.Monethical.consent.get()); };
+      document.getElementById('reset').onclick = function () {
+        document.cookie = 'monethical_consent=; Max-Age=0; Path=/';
+        localStorage.removeItem('monethical_consent');
+        location.reload();
+      };
+      setTimeout(function () {
+        var el = document.createElement('div');
+        el.setAttribute('data-monethical-widget', 'newsletter');
+        document.getElementById('late').appendChild(el);
+      }, 1500);
+    })();
+  </script>
+</body>
+</html>

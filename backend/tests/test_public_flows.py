@@ -487,3 +487,18 @@ def test_worker_reports_failures_for_retry(monkeypatch: Any) -> None:
     assert res == {"batchItemFailures": []}  # vanished submissions are skipped, not retried forever
     res = _run_worker([{"kind": "mystery", "site_id": "x"}])
     assert res == {"batchItemFailures": []}
+
+
+def test_validation_errors_carry_per_field_details(
+    console_a: Api, public: Api, site_a: dict[str, Any]
+) -> None:
+    form = make_form(console_a, site_a)
+    status, data, headers = public.post(
+        pub(site_a, f"/forms/{form['form_id']}/submit"),
+        {"data": {"name": "M", "email": "bad", "message": ""}},
+        headers=ORIGIN,
+    )
+    assert status == 400 and data["error"]["code"] == "invalid_submission"
+    fields = {d["field"]: d["message"] for d in data["error"]["details"]}
+    assert fields == {"email": "invalid_email", "message": "required"}
+    assert headers["Access-Control-Allow-Origin"] == "https://rossi.example.com"

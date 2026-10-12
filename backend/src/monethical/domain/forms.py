@@ -200,7 +200,8 @@ def validate_submission(form: FormStored, raw: dict[str, Any]) -> dict[str, Any]
         errors["privacy"] = "required"
     if errors:
         raise InvalidSubmission(
-            "Validation failed: " + ", ".join(f"{k}:{v}" for k, v in errors.items())
+            "Validation failed: " + ", ".join(f"{k}:{v}" for k, v in errors.items()),
+            details=[{"field": k, "message": v} for k, v in errors.items()],
         )
     return clean
 

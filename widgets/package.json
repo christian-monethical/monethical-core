@@ -1,0 +1,29 @@
+{
+  "name": "@monethical/widgets",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Embeddable Monethical customer-site widgets (consent, forms, newsletter, survey, catalog/booking).",
+  "exports": {
+    "./preview": "./src/preview.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "node scripts/build.mjs",
+    "size": "node scripts/size.mjs",
+    "demo": "npm run build && node demo/server.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "esbuild": "0.28.2",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "happy-dom": "21.0.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.4"
+  }
+}
