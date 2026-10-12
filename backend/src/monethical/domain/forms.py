@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from monethical.core import db, keys
-from monethical.core.errors import BadRequest, Forbidden, NotFound
+from monethical.core.errors import BadRequest, Conflict, Forbidden, NotFound
 from monethical.core.ids import hash_ip, new_id, now_iso
 from monethical.domain import plans
 from monethical.domain.styles import LongText, MediumText, ShortText, Surface
@@ -265,12 +265,15 @@ def list_submissions(
 def set_submission_status(
     site_id: str, submission_id: str, status: Literal["new", "read", "archived"]
 ) -> None:
-    db.update(
-        keys.site(site_id),
-        f"{keys.SK_SUBMISSION}{submission_id}",
-        set_values={"status": status},
-        condition="attribute_exists(PK)",
-    )
+    try:
+        db.update(
+            keys.site(site_id),
+            f"{keys.SK_SUBMISSION}{submission_id}",
+            set_values={"status": status},
+            condition="attribute_exists(PK)",
+        )
+    except Conflict as exc:
+        raise NotFound("Submission not found", code="submission_not_found") from exc
 
 
 def delete_submission(site_id: str, submission_id: str) -> None:

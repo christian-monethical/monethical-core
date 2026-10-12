@@ -156,3 +156,25 @@ def test_origin_helpers() -> None:
     assert not host_allowed("", ["example.com"])
     assert host_of("https://User@Example.com:8443/x") == "example.com"
     assert host_of("not a url") == ""
+
+
+def test_deleting_site_removes_survey_responses_and_unknown_submission_is_404(
+    console_a: Api, public: Api, site_a: dict[str, Any]
+) -> None:
+    from monethical.core import db
+
+    sid = site_a["site_id"]
+    survey = console_a.post(
+        f"/v1/sites/{sid}/surveys",
+        {"title": "S", "questions": [{"key": "a", "text": "Voto", "type": "rating"}]},
+    )[1]
+    public.post(
+        f"/public/{site_a['site_key']}/surveys/{survey['survey_id']}/respond",
+        {"answers": {"a": 4}},
+        headers=ORIGIN,
+    )
+    partition = f"SITE#{sid}#SURVEY#{survey['survey_id']}"
+    assert db.query(partition).items
+    assert console_a.patch(f"/v1/sites/{sid}/submissions/nope", {"status": "read"})[0] == 404
+    assert console_a.delete(f"/v1/sites/{sid}")[0] == 204
+    assert db.query(partition).items == []

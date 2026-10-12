@@ -383,3 +383,107 @@ def test_legacy_formrelay_contract(console_a: Api, public: Api, site_a: dict[str
         honey[0] == 200
         and len(console_a.get(f"/v1/sites/{site_a['site_id']}/submissions")[1]["items"]) == 1
     )
+
+
+def _run_worker(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    from monethical.handlers import worker
+
+    records = [
+        {
+            "messageId": str(i),
+            "receiptHandle": "r",
+            "body": json.dumps(m),
+            "attributes": {},
+            "messageAttributes": {},
+            "md5OfBody": "",
+            "eventSource": "aws:sqs",
+            "eventSourceARN": "arn:aws:sqs:eu-north-1:1:q",
+            "awsRegion": "eu-north-1",
+        }
+        for i, m in enumerate(messages)
+    ]
+    ctx = type(
+        "C",
+        (),
+        {
+            "function_name": "t",
+            "memory_limit_in_mb": 1,
+            "invoked_function_arn": "a",
+            "aws_request_id": "r",
+        },
+    )()
+    return worker.handler({"Records": records}, ctx)  # type: ignore[no-any-return]
+
+
+def test_worker_autoresponder_and_booking_mails(
+    console_a: Api, public: Api, site_a: dict[str, Any], monkeypatch: Any
+) -> None:
+    from datetime import date, timedelta
+
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr("monethical.core.emailing.send", lambda **kw: sent.append(kw))
+    sid = site_a["site_id"]
+    form = console_a.post(
+        f"/v1/sites/{sid}/forms",
+        {
+            "name": "Contatti",
+            "recipients": ["info@rossi.example.com"],
+            "autoresponder": {"enabled": True, "subject": "Grazie", "body": "Ti risponderemo"},
+        },
+    )[1]
+    public.post(
+        pub(site_a, f"/forms/{form['form_id']}/submit"),
+        {
+            "data": {
+                "name": "Mario",
+                "email": "mario@example.com",
+                "message": "Ciao a tutti, grazie",
+            }
+        },
+        headers=ORIGIN,
+    )
+    console_a.post(
+        f"/v1/sites/{sid}/items",
+        {
+            "name": "Camera",
+            "slug": "camera",
+            "type": "ROOM",
+            "price_cents": 9000,
+            "capacity": 2,
+            "cta_mode": "book",
+        },
+    )
+    start = date.today() + timedelta(days=20)
+    public.post(
+        pub(site_a, "/items/camera/book"),
+        {
+            "start": start.isoformat(),
+            "end": (start + timedelta(days=1)).isoformat(),
+            "guests": 2,
+            "name": "Anna",
+            "email": "anna@example.com",
+        },
+        headers=ORIGIN,
+    )
+    assert _run_worker(drain_queue()) == {"batchItemFailures": []}
+    recipients = [m["to"] for m in sent]
+    assert ["info@rossi.example.com"] in recipients and [
+        "mario@example.com"
+    ] in recipients  # notice + autoresponder
+    assert ["anna@example.com"] in recipients and [
+        "a@example.com"
+    ] in recipients  # customer + owner booking mails
+    assert any(m["subject"] == "Grazie" for m in sent)
+
+
+def test_worker_reports_failures_for_retry(monkeypatch: Any) -> None:
+    def boom(**_: Any) -> None:
+        raise RuntimeError("SES down")
+
+    monkeypatch.setattr("monethical.core.emailing.send", boom)
+    res = _run_worker(
+        [{"kind": "form_submission", "site_id": "x", "site_name": "S", "submission_id": "gone"}]
+    )
+    assert res == {"batchItemFailures": []}  # vanished submissions are skipped, not retried forever
+    res = _run_worker([{"kind": "mystery", "site_id": "x"}])
+    assert res == {"batchItemFailures": []}

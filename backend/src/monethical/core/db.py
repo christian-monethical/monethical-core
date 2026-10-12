@@ -76,6 +76,11 @@ def _ser_map(values: Item | None) -> dict[str, Any]:
     return {k: _ser.serialize(_to_db(v)) for k, v in (values or {}).items()}
 
 
+def _ser_item(item: Item) -> dict[str, Any]:
+    """Serialize a stored item: absent values are omitted rather than stored as NULL/empty."""
+    return _ser_map({k: v for k, v in item.items() if v is not None and v != ""})
+
+
 def _from_db(raw: dict[str, Any]) -> Item:
     cleaned: Item = _clean({k: _de.deserialize(v) for k, v in raw.items()})
     return cleaned
@@ -130,7 +135,7 @@ def get(pk: str, sk: str, *, consistent: bool = False) -> Item | None:
 
 
 def put(item: Item, *, must_not_exist: bool = False) -> None:
-    kwargs: dict[str, Any] = {"TableName": _table(), "Item": _ser_map(item)}
+    kwargs: dict[str, Any] = {"TableName": _table(), "Item": _ser_item(item)}
     if must_not_exist:
         kwargs["ConditionExpression"] = "attribute_not_exists(PK)"
     try:
@@ -263,7 +268,7 @@ def transact(ops: list[Op]) -> None:
     entries: list[dict[str, Any]] = []
     for op in ops:
         if op.kind == "put":
-            e: dict[str, Any] = {"TableName": table, "Item": _ser_map(op.item)}
+            e: dict[str, Any] = {"TableName": table, "Item": _ser_item(op.item or {})}
             body = {"Put": e}
         elif op.kind == "delete":
             e = {"TableName": table, "Key": _ser_map(op.key)}

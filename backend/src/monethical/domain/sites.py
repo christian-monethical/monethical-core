@@ -212,6 +212,9 @@ def delete_site(principal: Principal, site_id: str) -> None:
 
     site = get_owned_site(principal.tenant_id, site_id)
     apikeys.delete_for_site(principal.tenant_id, site_id)
+    # survey responses live in their own partitions: remove them before the site partition
+    for survey in db.query_all(keys.site(site_id), sk_prefix=keys.SK_SURVEY, cap=200):
+        db.delete_partition(f"{keys.site(site_id)}#{survey['SK']}")
     db.delete_partition(keys.site(site_id))
     for d in site["domains"]:
         db.delete(keys.domain(d), keys.LOOKUP)
