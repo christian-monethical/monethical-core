@@ -1,0 +1,19 @@
+# Copy to samconfig.toml (git-ignored) and fill in. Never commit real values.
+version = 0.1
+
+[test.deploy.parameters]
+stack_name = "monethical-core-test"
+region = "eu-north-1"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+parameter_overrides = [
+  "Stage=test",
+  "CognitoDomainPrefix=monethical-test-CHANGE-ME",
+  "SesFromAddress=noreply@example.com",
+  "SesIdentityArn=arn:aws:ses:eu-north-1:ACCOUNT_ID:identity/example.com",
+  "AlarmEmail=ops@example.com",
+  "ConsoleCallbackUrls=https://CONSOLE_DOMAIN/auth/callback,http://localhost:5173/auth/callback",
+  "ConsoleLogoutUrls=https://CONSOLE_DOMAIN/,http://localhost:5173/",
+  "OriginVerifySecret=GENERATE-A-LONG-RANDOM-STRING",
+]

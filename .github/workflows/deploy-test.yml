@@ -1,0 +1,77 @@
+name: Deploy (test environment)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [backend/**, infra/**, web/**, widgets/**]
+
+permissions:
+  id-token: write   # OIDC: no long-lived AWS keys
+  contents: read
+
+concurrency:
+  group: deploy-test
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Build and deploy backend + infra
+        working-directory: infra
+        run: |
+          sam build --use-container -t template.yaml
+          sam deploy --stack-name "${{ vars.STACK_NAME }}" --region "${{ vars.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "Stage=test" \
+              "CognitoDomainPrefix=${{ vars.COGNITO_DOMAIN_PREFIX }}" \
+              "SesFromAddress=${{ vars.SES_FROM_ADDRESS }}" \
+              "SesIdentityArn=${{ vars.SES_IDENTITY_ARN }}" \
+              "AlarmEmail=${{ vars.ALARM_EMAIL }}" \
+              "ConsoleCallbackUrls=${{ vars.CONSOLE_CALLBACK_URLS }}" \
+              "ConsoleLogoutUrls=${{ vars.CONSOLE_LOGOUT_URLS }}" \
+              "OriginVerifySecret=${{ secrets.ORIGIN_VERIFY_SECRET }}"
+      - name: Read stack outputs
+        id: out
+        run: |
+          out() { aws cloudformation describe-stacks --stack-name "${{ vars.STACK_NAME }}" --region "${{ vars.AWS_REGION }}" \
+                    --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
+          echo "console_bucket=$(out ConsoleBucketName)" >> "$GITHUB_OUTPUT"
+          echo "config_bucket=$(out ConfigBucketName)" >> "$GITHUB_OUTPUT"
+          echo "console_dist=$(out ConsoleDistributionId)" >> "$GITHUB_OUTPUT"
+          echo "edge_dist=$(out EdgeDistributionId)" >> "$GITHUB_OUTPUT"
+          echo "edge_url=$(out EdgeUrl)" >> "$GITHUB_OUTPUT"
+          echo "domain=$(out CognitoHostedUiDomain)" >> "$GITHUB_OUTPUT"
+          echo "client=$(out UserPoolClientId)" >> "$GITHUB_OUTPUT"
+      - name: Publish widgets
+        if: hashFiles('widgets/package.json') != ''
+        env:
+          CONFIG_BUCKET: ${{ steps.out.outputs.config_bucket }}
+          EDGE_DISTRIBUTION_ID: ${{ steps.out.outputs.edge_dist }}
+        run: |
+          (cd widgets && npm ci)
+          make publish-widgets
+      - name: Publish console
+        if: hashFiles('web/package.json') != ''
+        env:
+          CONSOLE_BUCKET: ${{ steps.out.outputs.console_bucket }}
+          CONSOLE_DISTRIBUTION_ID: ${{ steps.out.outputs.console_dist }}
+          VITE_COGNITO_DOMAIN: ${{ steps.out.outputs.domain }}
+          VITE_COGNITO_CLIENT_ID: ${{ steps.out.outputs.client }}
+          VITE_EDGE_URL: ${{ steps.out.outputs.edge_url }}
+        run: |
+          (cd web && npm ci)
+          make publish-web
