@@ -105,6 +105,15 @@ describe('survey widget', () => {
     expect(q('[role=status]').textContent).toBe('Thanks for the feedback');
   });
 
+  it('maps structured details back to the question', async () => {
+    const err = new ApiError(400, 'invalid_submission', 'Validation failed', [{ field: 'score', message: 'invalid_rating' }]);
+    mountSurvey(host, survey, fakeApi(() => err).api, 'en');
+    pick(0, '4');
+    submit();
+    await flush();
+    expect(shadowOf(host).querySelector('fieldset input')?.getAttribute('aria-invalid')).toBe('true');
+  });
+
   it('maps server answer errors back to the question', async () => {
     const { api } = fakeApi(() => new ApiError(400, 'invalid_submission', 'Validation failed: score:invalid_rating'));
     mountSurvey(host, survey, api, 'en');

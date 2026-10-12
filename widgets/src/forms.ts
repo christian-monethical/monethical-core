@@ -87,7 +87,7 @@ export function mountForm(parent: Node, form: PublicForm, api: Api, lang: Lang):
   };
 
   const applyServer = (err: ApiError): boolean => {
-    const codes = parseServerErrors(err.message);
+    const codes = parseServerErrors(err);
     let matched = false;
     for (const e of entries) {
       const code = codes[e.field.key];

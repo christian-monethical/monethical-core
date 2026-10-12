@@ -136,6 +136,20 @@ describe('contact form widget', () => {
     expect(err?.textContent).toBe('Inserisci un indirizzo e-mail valido');
   });
 
+  it('prefers structured details over the message', async () => {
+    const err = new ApiError(400, 'invalid_submission', 'Validation failed', [
+      { field: 'data.phone', message: 'invalid_phone' },
+      { field: 'privacy', message: 'required' },
+    ]);
+    mountForm(host, form, fakeApi(() => err).api, 'en');
+    fill();
+    submit();
+    await flush();
+    expect(q<HTMLInputElement>('[name=phone]').getAttribute('aria-invalid')).toBe('true');
+    expect(q<HTMLInputElement>('input[type=checkbox]').getAttribute('aria-invalid')).toBe('true');
+    expect(q<HTMLInputElement>('[name=email]').hasAttribute('aria-invalid')).toBe(false);
+  });
+
   it('shows friendly messages for 429, network and unknown failures and re-enables the button', async () => {
     for (const [error, text] of [
       [new ApiError(429, 'rate_limited', 'x'), 'Too many requests. Please wait a minute and retry.'],

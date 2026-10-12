@@ -5,6 +5,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly details?: unknown,
   ) {
     super(message);
   }
@@ -17,7 +18,7 @@ export interface Api {
 }
 
 interface ErrorBody {
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; details?: unknown };
 }
 
 async function request<T>(url: string, init: RequestInit): Promise<T> {
@@ -29,7 +30,7 @@ async function request<T>(url: string, init: RequestInit): Promise<T> {
   }
   const body = (await res.json().catch(() => null)) as (ErrorBody & T) | null;
   if (!res.ok) {
-    throw new ApiError(res.status, body?.error?.code ?? 'error', body?.error?.message ?? '');
+    throw new ApiError(res.status, body?.error?.code ?? 'error', body?.error?.message ?? '', body?.error?.details);
   }
   return body as T;
 }

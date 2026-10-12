@@ -142,7 +142,7 @@ export function mountSurvey(parent: Node, survey: PublicSurvey, api: Api, lang: 
       .catch((err: unknown) => {
         setBusy(submit, false);
         if (err instanceof ApiError && err.code === 'invalid_submission') {
-          const codes = parseServerErrors(err.message);
+          const codes = parseServerErrors(err);
           const hit = entries.filter((e) => codes[e.q.key]);
           hit.forEach((e) => { e.setError(errText(lang, codes[e.q.key] ?? 'invalid')); });
           if (hit[0]) return hit[0].focus();
